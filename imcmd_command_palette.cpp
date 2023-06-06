@@ -1,3 +1,4 @@
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include "imcmd_command_palette.h"
 
 #include "imcmd_fuzzy_search.h"
@@ -12,7 +13,6 @@
 #include <limits>
 #include <utility>
 
-#define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
 
 namespace ImCmd
