@@ -746,12 +746,12 @@ void CommandPalette(const char* name)
         }
     }
 
-    if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_UpArrow))) {
+    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
         gi.CurrentSelectedItem = ImMax(gi.CurrentSelectedItem - 1, 0);
-    } else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_DownArrow))) {
+    } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
         gi.CurrentSelectedItem = ImMin(gi.CurrentSelectedItem + 1, item_count - 1);
     }
-    if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Enter)) || select_focused_item) {
+    if (ImGui::IsKeyPressed(ImGuiKey_Enter) || select_focused_item) {
         if (gi.Search.IsActive() && !gi.Search.SearchResults.empty()) {
             auto idx = gi.Search.SearchResults[gi.CurrentSelectedItem].ItemIndex;
             gi.Session.SelectItem(idx);
