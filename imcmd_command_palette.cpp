@@ -635,7 +635,7 @@ void CommandPalette(const char* name)
 
         ImVec2 size{
             ImGui::GetContentRegionAvail().x,
-            ImMax(font_regular->FontSize, font_highlight->FontSize),
+            ImMax(font_regular->FontSize, font_highlight->FontSize) * font_scale,
         };
         ImRect rect{
             window->DC.CursorPos,
@@ -670,7 +670,7 @@ void CommandPalette(const char* name)
                     auto end = text + range_begin;
 
                     draw_list->AddText(text_pos, text_color_regular, begin, end);
-                    auto segment_size = font_regular->CalcTextSizeA(font_regular->FontSize, std::numeric_limits<float>::max(), 0.0f, begin, end);
+                    auto segment_size = font_regular->CalcTextSizeA(font_regular->FontSize * font_scale, std::numeric_limits<float>::max(), 0.0f, begin, end);
 
                     if (underline_regular) {
                         float x1 = text_pos.x;
