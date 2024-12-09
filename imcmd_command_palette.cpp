@@ -575,7 +575,7 @@ void CommandPalette(const char* name)
         gi.Search.RefreshSearchResults();
     }
 
-    ImGui::BeginChild("SearchResults", ImVec2(width, search_result_window_height));
+    ImGui::BeginChild("SearchResults", ImVec2(width, search_result_window_height), ImGuiChildFlags_FrameStyle);
 
     auto window = ImGui::GetCurrentContext()->CurrentWindow;
     auto draw_list = window->DrawList;
@@ -623,6 +623,9 @@ void CommandPalette(const char* name)
         gi.ExtraData.resize(item_count);
     }
 
+    ImGuiContext& g = *GImGui;
+    const auto& style = g.Style;
+
     // Flag used to delay item selection until after the loop ends
     bool select_focused_item = false;
     for (int i = 0; i < item_count; ++i) {
@@ -641,6 +644,20 @@ void CommandPalette(const char* name)
             window->DC.CursorPos,
             window->DC.CursorPos + ImGui::CalcItemSize(size, 0.0f, 0.0f),
         };
+
+        // extend the bounding box so that the filled background covers the entire item
+        {
+            const float spacing_x = style.ItemSpacing.x;
+            const float spacing_y = style.ItemSpacing.y;
+            const float spacing_L = IM_TRUNC(spacing_x * 0.50f);
+            const float spacing_U = IM_TRUNC(spacing_y * 0.50f);
+            rect.Min.x -= spacing_L;
+            rect.Min.y -= spacing_U;
+            rect.Max.x += (spacing_x - spacing_L);
+            rect.Max.y += (spacing_y - spacing_U);
+            // if (g.IO.KeyCtrl)
+            //     ImGui::GetForegroundDrawList()->AddRect(rect.Min, rect.Max, IM_COL32(0, 255, 0, 255));
+        }
 
         bool& hovered = gi.ExtraData[i].Hovered;
         bool& held = gi.ExtraData[i].Held;
@@ -736,7 +753,7 @@ void CommandPalette(const char* name)
             draw_list->AddText(text_pos, text_color_regular, text);
         }
 
-        ImGui::ItemSize(rect);
+        ImGui::ItemSize(size, 0.0f);
         if (!ImGui::ItemAdd(rect, id)) {
             continue;
         }
