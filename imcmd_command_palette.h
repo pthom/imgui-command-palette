@@ -62,7 +62,7 @@ void ClearStyleColor(ImCmdTextType type); //< Clear the style color for the give
 // Command palette widget
 void SetNextCommandPaletteSearch(const char* text);
 void SetNextCommandPaletteSearchBoxFocused();
-void CommandPalette(const char* name);
+void CommandPalette(const char* name, const char* hint = nullptr);
 bool IsAnyItemSelected();
 
 void RemoveCache(const char* name);

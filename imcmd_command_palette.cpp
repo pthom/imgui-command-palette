@@ -516,7 +516,7 @@ void SetNextCommandPaletteSearchBoxFocused()
     gContext->NextCommandPaletteActions.FocusSearchBox = true;
 }
 
-void CommandPalette(const char* name)
+void CommandPalette(const char* name, const char* hint)
 {
     IM_ASSERT(gContext != nullptr);
 
@@ -571,7 +571,7 @@ void CommandPalette(const char* name)
         ImGui::SetKeyboardFocusHere(0);
     }
     ImGui::SetNextItemWidth(width);
-    if (ImGui::InputText("##SearchBox", gi.Search.SearchText, IM_ARRAYSIZE(gi.Search.SearchText))) {
+    if (ImGui::InputTextWithHint("##SearchBox", hint, gi.Search.SearchText, IM_ARRAYSIZE(gi.Search.SearchText))) {
         // Search string updated, update search results
         gi.Search.RefreshSearchResults();
     }
