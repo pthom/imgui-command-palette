@@ -32,6 +32,8 @@ struct Command
     std::function<void()> InitialCallback;
     std::function<void(int selected_option)> SubsequentCallback;
     std::function<void()> TerminatingCallback;
+    std::string Icon = "";
+    std::string Shortcut = "";
 };
 
 // Initialization

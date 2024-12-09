@@ -59,6 +59,8 @@ public:
 
     int GetItemCount() const;
     const char* GetItem(int idx) const;
+    const char* GetIcon(int idx) const;
+    const char* GetShortcut(int idx) const;
     void SelectItem(int idx);
 
     void PushOptions(std::vector<std::string> options);
@@ -89,6 +91,8 @@ public:
 
     int GetItemCount() const;
     const char* GetItem(int idx) const;
+    const char* GetIcon(int idx) const;
+    const char* GetShortcut(int idx) const;
 
     bool IsActive() const;
 
@@ -262,6 +266,24 @@ const char* ExecutionManager::GetItem(int idx) const
     }
 }
 
+const char* ExecutionManager::GetIcon(int idx) const
+{
+    if (m_ExecutingCommand) {
+        return "";
+    } else {
+        return gContext->Commands[idx].Icon.c_str();
+    }
+}
+
+const char* ExecutionManager::GetShortcut(int idx) const
+{
+    if (m_ExecutingCommand) {
+        return "";
+    } else {
+        return gContext->Commands[idx].Shortcut.c_str();
+    }
+}
+
 template <class TFunc, class... Ts>
 static void InvokeSafe(const TFunc& func, Ts&&... args)
 {
@@ -339,6 +361,18 @@ const char* SearchManager::GetItem(int idx) const
 {
     int actualIdx = SearchResults[idx].ItemIndex;
     return m_Instance->Session.GetItem(actualIdx);
+}
+
+const char* SearchManager::GetIcon(int idx) const
+{
+    int actualIdx = SearchResults[idx].ItemIndex;
+    return m_Instance->Session.GetIcon(actualIdx);
+}
+
+const char* SearchManager::GetShortcut(int idx) const
+{
+    int actualIdx = SearchResults[idx].ItemIndex;
+    return m_Instance->Session.GetShortcut(actualIdx);
 }
 
 bool SearchManager::IsActive() const
@@ -627,6 +661,8 @@ void CommandPalette(const char* name, const char* hint)
         gi.ExtraData.resize(item_count);
     }
 
+    const ImGuiMenuColumns* offsets = &window->DC.MenuColumns;
+
     // Flag used to delay item selection until after the loop ends
     bool select_focused_item = false;
     for (int i = 0; i < item_count; ++i) {
@@ -674,9 +710,30 @@ void CommandPalette(const char* name, const char* hint)
             // Iterating search results: draw text with highlights at matched chars
 
             auto& search_result = gi.Search.SearchResults[i];
-            auto text = gi.Search.GetItem(i);
 
-            auto text_pos = window->DC.CursorPos;
+            auto icon = gi.Search.GetIcon(i);
+            auto text = gi.Search.GetItem(i);
+            auto shortcut = gi.Search.GetShortcut(i);
+
+            ImVec2 text_size = ImGui::CalcTextSize(text, NULL, true);
+            float icon_w = (icon && icon[0]) ? ImGui::CalcTextSize(icon, NULL).x : 0.0f;
+            float shortcut_w = (shortcut && shortcut[0]) ? ImGui::CalcTextSize(shortcut, NULL).x : 0.0f;
+            const float checkmark_w = 0.f;
+            float min_w = window->DC.MenuColumns.DeclColumns(icon_w, text_size.x, shortcut_w, checkmark_w); // Feedback for next frame
+            float stretch_w = ImMax(0.0f, ImGui::GetContentRegionAvail().x - min_w);
+
+            auto pos = window->DC.CursorPos;
+
+            if (icon_w > 0.0f)
+                draw_list->AddText(pos + ImVec2(offsets->OffsetIcon, 0.0f), text_color_regular, icon);
+            if (shortcut_w > 0.0f)
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, style.Colors[ImGuiCol_TextDisabled]);
+                draw_list->AddText(pos + ImVec2(offsets->OffsetShortcut + stretch_w, 0.0f), ImGui::GetColorU32(ImGuiCol_Text), shortcut);
+                ImGui::PopStyleColor();
+            }
+
+            auto text_pos = pos + ImVec2(offsets->OffsetLabel, 0.0f);
             int range_begin;
             int range_end;
             int last_range_end = 0;
@@ -749,9 +806,28 @@ void CommandPalette(const char* name, const char* hint)
         } else {
             // Iterating everything else: draw text as-is, there is no highlights
 
+            auto icon = gi.Session.GetIcon(i);
             auto text = gi.Session.GetItem(i);
-            auto text_pos = window->DC.CursorPos;
-            draw_list->AddText(text_pos, text_color_regular, text);
+            auto shortcut = gi.Session.GetShortcut(i);
+
+            ImVec2 text_size = ImGui::CalcTextSize(text, NULL, true);
+            float icon_w = (icon && icon[0]) ? ImGui::CalcTextSize(icon, NULL).x : 0.0f;
+            float shortcut_w = (shortcut && shortcut[0]) ? ImGui::CalcTextSize(shortcut, NULL).x : 0.0f;
+            const float checkmark_w = 0.f;
+            float min_w = window->DC.MenuColumns.DeclColumns(icon_w, text_size.x, shortcut_w, checkmark_w); // Feedback for next frame
+            float stretch_w = ImMax(0.0f, ImGui::GetContentRegionAvail().x - min_w);
+
+            auto pos = window->DC.CursorPos;
+
+            draw_list->AddText(pos + ImVec2(offsets->OffsetLabel, 0.0f), text_color_regular, text);
+            if (icon_w > 0.0f)
+                draw_list->AddText(pos + ImVec2(offsets->OffsetIcon, 0.0f), text_color_regular, icon);
+            if (shortcut_w > 0.0f)
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, style.Colors[ImGuiCol_TextDisabled]);
+                draw_list->AddText(pos + ImVec2(offsets->OffsetShortcut + stretch_w, 0.0f), ImGui::GetColorU32(ImGuiCol_Text), shortcut);
+                ImGui::PopStyleColor();
+            }
         }
 
         ImGui::ItemSize(size, 0.0f);
