@@ -520,6 +520,8 @@ void CommandPalette(const char* name)
 {
     IM_ASSERT(gContext != nullptr);
 
+    ImGuiContext& g = *GImGui;
+    const auto& style = g.Style;
     auto& gg = *gContext;
     auto& gi = *[&]() {
         auto id = ImHashStr(name);
@@ -532,8 +534,7 @@ void CommandPalette(const char* name)
         }
     }();
 
-    float width = ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x;
-    float search_result_window_height = 400.0f; // TODO config
+    float width = ImGui::GetContentRegionAvail().x;
 
     // BEGIN this command palette
     gg.CurrentCommandPalette = &gi;
@@ -575,6 +576,16 @@ void CommandPalette(const char* name)
         gi.Search.RefreshSearchResults();
     }
 
+    int item_count;
+    if (gi.Search.IsActive()) {
+        item_count = gi.Search.GetItemCount();
+    } else {
+        item_count = gi.Session.GetItemCount();
+    }
+
+    float remaining_height = ImGui::GetMainViewport()->Size.y - ImGui::GetCursorScreenPos().y;
+    float search_result_window_height = ImMin(remaining_height - 100.f, ImGui::GetTextLineHeightWithSpacing() * item_count + style.FramePadding.y - 1.0f); // TODO config
+
     ImGui::BeginChild("SearchResults", ImVec2(width, search_result_window_height), ImGuiChildFlags_FrameStyle);
 
     auto window = ImGui::GetCurrentContext()->CurrentWindow;
@@ -612,19 +623,9 @@ void CommandPalette(const char* name)
     // Could be 0.5 on macOS Retina, 1 elsewhere
     float font_scale = ImGui::GetIO().FontGlobalScale;
 
-    int item_count;
-    if (gi.Search.IsActive()) {
-        item_count = gi.Search.GetItemCount();
-    } else {
-        item_count = gi.Session.GetItemCount();
-    }
-
     if (gi.ExtraData.size() < item_count) {
         gi.ExtraData.resize(item_count);
     }
-
-    ImGuiContext& g = *GImGui;
-    const auto& style = g.Style;
 
     // Flag used to delay item selection until after the loop ends
     bool select_focused_item = false;
