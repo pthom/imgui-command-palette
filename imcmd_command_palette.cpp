@@ -62,6 +62,7 @@ public:
     const char* GetIcon(int idx) const;
     const char* GetShortcut(int idx) const;
     bool HasSubsequent(int idx) const;
+    bool IsChecked(int idx) const;
     void SelectItem(int idx);
 
     void PushOptions(std::vector<std::string> options);
@@ -95,6 +96,7 @@ public:
     const char* GetIcon(int idx) const;
     const char* GetShortcut(int idx) const;
     bool HasSubsequent(int idx) const;
+    bool IsChecked(int idx) const;
 
     bool IsActive() const;
 
@@ -295,6 +297,11 @@ bool ExecutionManager::HasSubsequent(int idx) const
     }
 }
 
+bool ExecutionManager::IsChecked(int idx) const
+{
+    return m_ExecutingCommand ? false : (gContext->Commands[idx].IsChecked && *gContext->Commands[idx].IsChecked);
+}
+
 template <class TFunc, class... Ts>
 static void InvokeSafe(const TFunc& func, Ts&&... args)
 {
@@ -390,6 +397,12 @@ bool SearchManager::HasSubsequent(int idx) const
 {
     int actualIdx = SearchResults[idx].ItemIndex;
     return m_Instance->Session.HasSubsequent(actualIdx);
+}
+
+bool SearchManager::IsChecked(int idx) const
+{
+    int actualIdx = SearchResults[idx].ItemIndex;
+    return m_Instance->Session.IsChecked(actualIdx);
 }
 
 bool SearchManager::IsActive() const
@@ -753,6 +766,8 @@ void CommandPalette(const char* name, const char* hint)
             }
             if (gi.Search.HasSubsequent(i))
                 ImGui::RenderArrow(window->DrawList, pos + ImVec2(offsets->OffsetMark + stretch_w + g.FontSize * 0.30f, 0.0f), ImGui::GetColorU32(ImGuiCol_Text), ImGuiDir_Right);
+            else if (gi.Search.IsChecked(i))
+                ImGui::RenderCheckMark(window->DrawList, pos + ImVec2(offsets->OffsetMark + stretch_w + g.FontSize * 0.40f, g.FontSize * 0.134f * 0.5f), ImGui::GetColorU32(ImGuiCol_Text), g.FontSize * 0.866f);
 
             auto text_pos = pos + ImVec2(offsets->OffsetLabel, 0.0f);
             int range_begin;
@@ -851,6 +866,8 @@ void CommandPalette(const char* name, const char* hint)
             }
             if (gi.Session.HasSubsequent(i))
                 ImGui::RenderArrow(window->DrawList, pos + ImVec2(offsets->OffsetMark + stretch_w + g.FontSize * 0.30f, 0.0f), ImGui::GetColorU32(ImGuiCol_Text), ImGuiDir_Right);
+            else if (gi.Session.IsChecked(i))
+                ImGui::RenderCheckMark(window->DrawList, pos + ImVec2(offsets->OffsetMark + stretch_w + g.FontSize * 0.40f, g.FontSize * 0.134f * 0.5f), ImGui::GetColorU32(ImGuiCol_Text), g.FontSize * 0.866f);
         }
 
         ImGui::ItemSize(size, 0.0f);

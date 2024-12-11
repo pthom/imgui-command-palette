@@ -34,6 +34,7 @@ struct Command
     std::function<void()> TerminatingCallback;
     std::string Icon = "";
     std::string Shortcut = "";
+    bool* IsChecked = nullptr;
 };
 
 // Initialization
