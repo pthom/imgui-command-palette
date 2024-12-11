@@ -61,6 +61,7 @@ public:
     const char* GetItem(int idx) const;
     const char* GetIcon(int idx) const;
     const char* GetShortcut(int idx) const;
+    bool HasSubsequent(int idx) const;
     void SelectItem(int idx);
 
     void PushOptions(std::vector<std::string> options);
@@ -93,6 +94,7 @@ public:
     const char* GetItem(int idx) const;
     const char* GetIcon(int idx) const;
     const char* GetShortcut(int idx) const;
+    bool HasSubsequent(int idx) const;
 
     bool IsActive() const;
 
@@ -284,6 +286,15 @@ const char* ExecutionManager::GetShortcut(int idx) const
     }
 }
 
+bool ExecutionManager::HasSubsequent(int idx) const
+{
+    if (m_ExecutingCommand) {
+        return false;
+    } else {
+        return gContext->Commands[idx].SubsequentCallback != nullptr;
+    }
+}
+
 template <class TFunc, class... Ts>
 static void InvokeSafe(const TFunc& func, Ts&&... args)
 {
@@ -373,6 +384,12 @@ const char* SearchManager::GetShortcut(int idx) const
 {
     int actualIdx = SearchResults[idx].ItemIndex;
     return m_Instance->Session.GetShortcut(actualIdx);
+}
+
+bool SearchManager::HasSubsequent(int idx) const
+{
+    int actualIdx = SearchResults[idx].ItemIndex;
+    return m_Instance->Session.HasSubsequent(actualIdx);
 }
 
 bool SearchManager::IsActive() const
@@ -720,7 +737,7 @@ void CommandPalette(const char* name, const char* hint)
             ImVec2 text_size = ImGui::CalcTextSize(text, NULL, true);
             float icon_w = (icon && icon[0]) ? ImGui::CalcTextSize(icon, NULL).x : 0.0f;
             float shortcut_w = (shortcut && shortcut[0]) ? ImGui::CalcTextSize(shortcut, NULL).x : 0.0f;
-            const float checkmark_w = 0.f;
+            float checkmark_w = IM_TRUNC(g.FontSize * 1.20f);
             float min_w = window->DC.MenuColumns.DeclColumns(icon_w, text_size.x, shortcut_w, checkmark_w); // Feedback for next frame
             float stretch_w = ImMax(0.0f, ImGui::GetContentRegionAvail().x - min_w);
 
@@ -734,6 +751,8 @@ void CommandPalette(const char* name, const char* hint)
                 draw_list->AddText(pos + ImVec2(offsets->OffsetShortcut + stretch_w, 0.0f), ImGui::GetColorU32(ImGuiCol_Text), shortcut);
                 ImGui::PopStyleColor();
             }
+            if (gi.Search.HasSubsequent(i))
+                ImGui::RenderArrow(window->DrawList, pos + ImVec2(offsets->OffsetMark + stretch_w + g.FontSize * 0.30f, 0.0f), ImGui::GetColorU32(ImGuiCol_Text), ImGuiDir_Right);
 
             auto text_pos = pos + ImVec2(offsets->OffsetLabel, 0.0f);
             int range_begin;
@@ -815,7 +834,7 @@ void CommandPalette(const char* name, const char* hint)
             ImVec2 text_size = ImGui::CalcTextSize(text, NULL, true);
             float icon_w = (icon && icon[0]) ? ImGui::CalcTextSize(icon, NULL).x : 0.0f;
             float shortcut_w = (shortcut && shortcut[0]) ? ImGui::CalcTextSize(shortcut, NULL).x : 0.0f;
-            const float checkmark_w = 0.f;
+            float checkmark_w = IM_TRUNC(g.FontSize * 1.20f);
             float min_w = window->DC.MenuColumns.DeclColumns(icon_w, text_size.x, shortcut_w, checkmark_w); // Feedback for next frame
             float stretch_w = ImMax(0.0f, ImGui::GetContentRegionAvail().x - min_w);
 
@@ -830,6 +849,8 @@ void CommandPalette(const char* name, const char* hint)
                 draw_list->AddText(pos + ImVec2(offsets->OffsetShortcut + stretch_w, 0.0f), ImGui::GetColorU32(ImGuiCol_Text), shortcut);
                 ImGui::PopStyleColor();
             }
+            if (gi.Session.HasSubsequent(i))
+                ImGui::RenderArrow(window->DrawList, pos + ImVec2(offsets->OffsetMark + stretch_w + g.FontSize * 0.30f, 0.0f), ImGui::GetColorU32(ImGuiCol_Text), ImGuiDir_Right);
         }
 
         ImGui::ItemSize(size, 0.0f);
