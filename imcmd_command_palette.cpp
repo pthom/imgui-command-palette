@@ -587,6 +587,7 @@ void CommandPalette(const char* name, const char* hint)
         } else {
             gi.Search.SetSearchText(text);
         }
+        gg.NextCommandPaletteActions.NewSearchText = nullptr;
     } else if (gi.PendingActions.ClearSearch) {
         refresh_search = false;
         gi.Search.ClearSearchText();
@@ -603,6 +604,7 @@ void CommandPalette(const char* name, const char* hint)
         // Focus the search box when user first brings command palette window up
         // Note: this only affects the next frame
         ImGui::SetKeyboardFocusHere(0);
+        gg.NextCommandPaletteActions.FocusSearchBox = false;
     }
     ImGui::SetNextItemWidth(width);
     if (ImGui::InputTextWithHint("##SearchBox", hint, gi.Search.SearchText, IM_ARRAYSIZE(gi.Search.SearchText))) {
@@ -840,11 +842,6 @@ void CommandPalette(const char* name, const char* hint)
         }
     }
 
-    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
-        gi.CurrentSelectedItem = ImMax(gi.CurrentSelectedItem - 1, 0);
-    } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
-        gi.CurrentSelectedItem = ImMin(gi.CurrentSelectedItem + 1, item_count - 1);
-    }
     if (ImGui::IsKeyPressed(ImGuiKey_Enter) || select_focused_item) {
         if (gi.Search.IsActive() && !gi.Search.SearchResults.empty()) {
             auto idx = gi.Search.SearchResults[gi.CurrentSelectedItem].ItemIndex;
@@ -856,7 +853,11 @@ void CommandPalette(const char* name, const char* hint)
 
     ImGui::EndChild();
 
-    gg.NextCommandPaletteActions = {};
+    if (ImGui::Shortcut(ImGuiKey_UpArrow, ImGuiInputFlags_Repeat)) {
+        gi.CurrentSelectedItem = ImMax(gi.CurrentSelectedItem - 1, 0);
+    } else if (ImGui::Shortcut(ImGuiKey_DownArrow, ImGuiInputFlags_Repeat)) {
+        gi.CurrentSelectedItem = ImMin(gi.CurrentSelectedItem + 1, item_count - 1);
+    }
 
     ImGui::PopID();
     gg.CurrentCommandPalette = nullptr;
