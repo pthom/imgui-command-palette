@@ -32,6 +32,9 @@ struct Command
     std::function<void()> InitialCallback;
     std::function<void(int selected_option)> SubsequentCallback;
     std::function<void()> TerminatingCallback;
+    std::string Icon = "";
+    std::string Shortcut = "";
+    bool* IsChecked = nullptr;
 };
 
 // Initialization
@@ -62,7 +65,7 @@ void ClearStyleColor(ImCmdTextType type); //< Clear the style color for the give
 // Command palette widget
 void SetNextCommandPaletteSearch(const char* text);
 void SetNextCommandPaletteSearchBoxFocused();
-void CommandPalette(const char* name);
+void CommandPalette(const char* name, const char* hint = nullptr);
 bool IsAnyItemSelected();
 
 void RemoveCache(const char* name);

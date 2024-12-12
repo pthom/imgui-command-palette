@@ -59,6 +59,10 @@ public:
 
     int GetItemCount() const;
     const char* GetItem(int idx) const;
+    const char* GetIcon(int idx) const;
+    const char* GetShortcut(int idx) const;
+    bool HasSubsequent(int idx) const;
+    bool IsChecked(int idx) const;
     void SelectItem(int idx);
 
     void PushOptions(std::vector<std::string> options);
@@ -89,6 +93,10 @@ public:
 
     int GetItemCount() const;
     const char* GetItem(int idx) const;
+    const char* GetIcon(int idx) const;
+    const char* GetShortcut(int idx) const;
+    bool HasSubsequent(int idx) const;
+    bool IsChecked(int idx) const;
 
     bool IsActive() const;
 
@@ -262,6 +270,38 @@ const char* ExecutionManager::GetItem(int idx) const
     }
 }
 
+const char* ExecutionManager::GetIcon(int idx) const
+{
+    if (m_ExecutingCommand) {
+        return "";
+    } else {
+        return gContext->Commands[idx].Icon.c_str();
+    }
+}
+
+const char* ExecutionManager::GetShortcut(int idx) const
+{
+    if (m_ExecutingCommand) {
+        return "";
+    } else {
+        return gContext->Commands[idx].Shortcut.c_str();
+    }
+}
+
+bool ExecutionManager::HasSubsequent(int idx) const
+{
+    if (m_ExecutingCommand) {
+        return false;
+    } else {
+        return gContext->Commands[idx].SubsequentCallback != nullptr;
+    }
+}
+
+bool ExecutionManager::IsChecked(int idx) const
+{
+    return m_ExecutingCommand ? false : (gContext->Commands[idx].IsChecked && *gContext->Commands[idx].IsChecked);
+}
+
 template <class TFunc, class... Ts>
 static void InvokeSafe(const TFunc& func, Ts&&... args)
 {
@@ -276,8 +316,8 @@ void ExecutionManager::SelectItem(int idx)
     size_t initial_call_stack_height = m_CallStack.size();
 
     // Guarding aginst invalid index.
-    if (idx >= gContext->Commands.size()) return;
-    IM_ASSERT(idx < gContext->Commands.size());
+    if (idx >= GetItemCount()) return;
+    IM_ASSERT(idx < GetItemCount());
 
     if (cmd == nullptr) {
         cmd = m_ExecutingCommand = &gContext->Commands[idx];
@@ -339,6 +379,30 @@ const char* SearchManager::GetItem(int idx) const
 {
     int actualIdx = SearchResults[idx].ItemIndex;
     return m_Instance->Session.GetItem(actualIdx);
+}
+
+const char* SearchManager::GetIcon(int idx) const
+{
+    int actualIdx = SearchResults[idx].ItemIndex;
+    return m_Instance->Session.GetIcon(actualIdx);
+}
+
+const char* SearchManager::GetShortcut(int idx) const
+{
+    int actualIdx = SearchResults[idx].ItemIndex;
+    return m_Instance->Session.GetShortcut(actualIdx);
+}
+
+bool SearchManager::HasSubsequent(int idx) const
+{
+    int actualIdx = SearchResults[idx].ItemIndex;
+    return m_Instance->Session.HasSubsequent(actualIdx);
+}
+
+bool SearchManager::IsChecked(int idx) const
+{
+    int actualIdx = SearchResults[idx].ItemIndex;
+    return m_Instance->Session.IsChecked(actualIdx);
 }
 
 bool SearchManager::IsActive() const
@@ -516,10 +580,12 @@ void SetNextCommandPaletteSearchBoxFocused()
     gContext->NextCommandPaletteActions.FocusSearchBox = true;
 }
 
-void CommandPalette(const char* name)
+void CommandPalette(const char* name, const char* hint)
 {
     IM_ASSERT(gContext != nullptr);
 
+    ImGuiContext& g = *GImGui;
+    const auto& style = g.Style;
     auto& gg = *gContext;
     auto& gi = *[&]() {
         auto id = ImHashStr(name);
@@ -531,9 +597,6 @@ void CommandPalette(const char* name)
             return instance;
         }
     }();
-
-    float width = ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x;
-    float search_result_window_height = 400.0f; // TODO config
 
     // BEGIN this command palette
     gg.CurrentCommandPalette = &gi;
@@ -552,6 +615,7 @@ void CommandPalette(const char* name)
         } else {
             gi.Search.SetSearchText(text);
         }
+        gg.NextCommandPaletteActions.NewSearchText = nullptr;
     } else if (gi.PendingActions.ClearSearch) {
         refresh_search = false;
         gi.Search.ClearSearchText();
@@ -568,17 +632,27 @@ void CommandPalette(const char* name)
         // Focus the search box when user first brings command palette window up
         // Note: this only affects the next frame
         ImGui::SetKeyboardFocusHere(0);
+        gg.NextCommandPaletteActions.FocusSearchBox = false;
     }
-    ImGui::SetNextItemWidth(width);
-    if (ImGui::InputText("##SearchBox", gi.Search.SearchText, IM_ARRAYSIZE(gi.Search.SearchText))) {
+    float available_width = ImGui::GetContentRegionAvail().x;
+    ImGui::SetNextItemWidth(available_width);
+    if (ImGui::InputTextWithHint("##SearchBox", hint, gi.Search.SearchText, IM_ARRAYSIZE(gi.Search.SearchText))) {
         // Search string updated, update search results
         gi.Search.RefreshSearchResults();
     }
 
-    ImGui::BeginChild("SearchResults", ImVec2(width, search_result_window_height));
+    int item_count = gi.Search.IsActive() ? gi.Search.GetItemCount() : gi.Session.GetItemCount();
 
-    auto window = ImGui::GetCurrentContext()->CurrentWindow;
-    auto draw_list = window->DrawList;
+    float remaining_height = ImGui::GetMainViewport()->Size.y - ImGui::GetCursorScreenPos().y;
+    float search_result_window_height = ImGui::GetTextLineHeightWithSpacing() * item_count + style.FramePadding.y - 1.0f;
+
+    // If the parent window is set to auto resize, then it and the child below will automatically
+    // grow based on the width of the search results. However, the behavior seems buggy:
+    // If the list of subcommands is wider, the window would grow as expected, but the command palette
+    // would start at this larger width next time it is launched. Launching it yet again would
+    // shrink it back to the autofit size.
+    ImGui::SetNextWindowSizeConstraints(ImVec2(available_width, 0), ImVec2(ImGui::GetMainViewport()->Size.x, remaining_height - 100.f));
+    ImGui::BeginChild("SearchResults", ImVec2(0, search_result_window_height), ImGuiChildFlags_FrameStyle | ImGuiChildFlags_AutoResizeX, ImGuiWindowFlags_NoSavedSettings);
 
     auto font_regular = gg.TextStyleFonts[ImCmdTextType_Regular];
     if (!font_regular) {
@@ -605,60 +679,71 @@ void CommandPalette(const char* name)
     bool underline_regular = gg.TextStyleFlags[ImCmdTextType_Regular] & (1 << ImCmdTextFlag_Underline);
     bool underline_highlight = gg.TextStyleFlags[ImCmdTextType_Highlight] & (1 << ImCmdTextFlag_Underline);
 
-    auto item_hovered_color = ImGui::GetColorU32(ImGuiCol_HeaderHovered);
-    auto item_active_color = ImGui::GetColorU32(ImGuiCol_HeaderActive);
-    auto item_selected_color = ImGui::GetColorU32(ImGuiCol_Header);
-
     // Could be 0.5 on macOS Retina, 1 elsewhere
     float font_scale = ImGui::GetIO().FontGlobalScale;
-
-    int item_count;
-    if (gi.Search.IsActive()) {
-        item_count = gi.Search.GetItemCount();
-    } else {
-        item_count = gi.Session.GetItemCount();
-    }
 
     if (gi.ExtraData.size() < item_count) {
         gi.ExtraData.resize(item_count);
     }
 
+    auto window = ImGui::GetCurrentContext()->CurrentWindow;
+    auto draw_list = window->DrawList;
+    auto offsets = &window->DC.MenuColumns;
+
     // Flag used to delay item selection until after the loop ends
     bool select_focused_item = false;
+    const ImGuiSelectableFlags selectable_flags = ImGuiSelectableFlags_SelectOnRelease | ImGuiSelectableFlags_NoSetKeyOwner | ImGuiSelectableFlags_SetNavIdOnHover | ImGuiSelectableFlags_SpanAvailWidth;
     for (int i = 0; i < item_count; ++i) {
         // Implement a custom button-like control
 
         // We are doing this so that it can be highlighted without losing focus on the ImGui::InputText,
-        // allowing the user to naviage with up/down arrow keys while typing.
+        // allowing the user to navigate with up/down arrow keys while typing.
 
-        auto id = window->GetID(static_cast<int>(i));
+        auto id = window->GetID(i);
+        ImGui::PushID(id);
 
-        ImVec2 size{
-            ImGui::GetContentRegionAvail().x,
-            ImMax(font_regular->FontSize, font_highlight->FontSize),
-        };
-        ImRect rect{
-            window->DC.CursorPos,
-            window->DC.CursorPos + ImGui::CalcItemSize(size, 0.0f, 0.0f),
-        };
+        // Calculate sizes and offsets for the icon, label, shortcut and checkarmk/arrow
+        auto icon = gi.Search.IsActive() ? gi.Search.GetIcon(i) : gi.Session.GetIcon(i);
+        auto text = gi.Search.IsActive() ? gi.Search.GetItem(i) : gi.Session.GetItem(i);
+        auto shortcut = gi.Search.IsActive() ? gi.Search.GetShortcut(i) : gi.Session.GetShortcut(i);
 
-        bool& hovered = gi.ExtraData[i].Hovered;
-        bool& held = gi.ExtraData[i].Held;
-        if (held && hovered) {
-            draw_list->AddRectFilled(rect.Min, rect.Max, item_active_color);
-        } else if (hovered) {
-            draw_list->AddRectFilled(rect.Min, rect.Max, item_hovered_color);
-        } else if (gi.CurrentSelectedItem == i) {
-            draw_list->AddRectFilled(rect.Min, rect.Max, item_selected_color);
+        ImVec2 text_size = ImGui::CalcTextSize(text, NULL, true);
+        float icon_w = (icon && icon[0]) ? ImGui::CalcTextSize(icon, NULL).x : 0.0f;
+        float shortcut_w = (shortcut && shortcut[0]) ? ImGui::CalcTextSize(shortcut, NULL).x : 0.0f;
+        float checkmark_w = IM_TRUNC(g.FontSize * 1.20f);
+        float min_w = offsets->DeclColumns(icon_w, text_size.x, shortcut_w, checkmark_w); // Feedback for next frame
+        float stretch_w = ImMax(0.0f, ImGui::GetContentRegionAvail().x - min_w);
+
+        auto pos = window->DC.CursorPos;
+
+        if (ImGui::Selectable("", gi.CurrentSelectedItem == i, selectable_flags, ImVec2(min_w, text_size.y)))
+        {
+            select_focused_item = true;
+            gi.CurrentSelectedItem = i;
         }
 
+        // Draw the icon, shortcut, and checkmark/arrow
+        if (icon_w > 0.0f)
+            draw_list->AddText(pos + ImVec2(offsets->OffsetIcon, 0.0f), text_color_regular, icon);
+        if (shortcut_w > 0.0f)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, style.Colors[ImGuiCol_TextDisabled]);
+            draw_list->AddText(pos + ImVec2(offsets->OffsetShortcut + stretch_w, 0.0f), ImGui::GetColorU32(ImGuiCol_Text), shortcut);
+            ImGui::PopStyleColor();
+        }
+        if (gi.Search.IsActive() ? gi.Search.HasSubsequent(i) : gi.Session.HasSubsequent(i))
+            ImGui::RenderArrow(window->DrawList, pos + ImVec2(offsets->OffsetMark + stretch_w + g.FontSize * 0.30f, 0.0f), ImGui::GetColorU32(ImGuiCol_Text), ImGuiDir_Right);
+        else if (gi.Search.IsActive() ? gi.Search.IsChecked(i) : gi.Session.IsChecked(i))
+            ImGui::RenderCheckMark(window->DrawList, pos + ImVec2(offsets->OffsetMark + stretch_w + g.FontSize * 0.40f, g.FontSize * 0.134f * 0.5f), ImGui::GetColorU32(ImGuiCol_Text), g.FontSize * 0.866f);
+
+        auto text_pos = pos + ImVec2(offsets->OffsetLabel, 0.0f);
+
+        // Now draw the text/name
         if (gi.Search.IsActive()) {
-            // Iterating search results: draw text with highlights at matched chars
+            // If we have started searching, draw text with highlights at matched chars
 
             auto& search_result = gi.Search.SearchResults[i];
-            auto text = gi.Search.GetItem(i);
 
-            auto text_pos = window->DC.CursorPos;
             int range_begin;
             int range_end;
             int last_range_end = 0;
@@ -670,7 +755,7 @@ void CommandPalette(const char* name)
                     auto end = text + range_begin;
 
                     draw_list->AddText(text_pos, text_color_regular, begin, end);
-                    auto segment_size = font_regular->CalcTextSizeA(font_regular->FontSize, std::numeric_limits<float>::max(), 0.0f, begin, end);
+                    auto segment_size = font_regular->CalcTextSizeA(font_regular->FontSize * font_scale, std::numeric_limits<float>::max(), 0.0f, begin, end);
 
                     if (underline_regular) {
                         float x1 = text_pos.x;
@@ -729,32 +814,25 @@ void CommandPalette(const char* name)
             // Draw the text after the last range (if any)
             draw_list->AddText(text_pos, text_color_regular, text + range_end); // Draw until \0
         } else {
-            // Iterating everything else: draw text as-is, there is no highlights
+            // Otherwise, just draw text as-is, there are no highlights
 
-            auto text = gi.Session.GetItem(i);
-            auto text_pos = window->DC.CursorPos;
             draw_list->AddText(text_pos, text_color_regular, text);
         }
 
-        ImGui::ItemSize(rect);
-        if (!ImGui::ItemAdd(rect, id)) {
-            continue;
-        }
-        if (ImGui::ButtonBehavior(rect, id, &hovered, &held)) {
-            gi.CurrentSelectedItem = i;
-            select_focused_item = true;
-        }
+        ImGui::PopID();
     }
 
-    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
-        gi.CurrentSelectedItem = ImMax(gi.CurrentSelectedItem - 1, 0);
-    } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
-        gi.CurrentSelectedItem = ImMin(gi.CurrentSelectedItem + 1, item_count - 1);
-    }
     if (ImGui::IsKeyPressed(ImGuiKey_Enter) || select_focused_item) {
-        if (gi.Search.IsActive() && !gi.Search.SearchResults.empty()) {
-            auto idx = gi.Search.SearchResults[gi.CurrentSelectedItem].ItemIndex;
-            gi.Session.SelectItem(idx);
+        if (gi.Search.IsActive()) {
+            if (!gi.Search.SearchResults.empty())
+            {
+                auto idx = gi.Search.SearchResults[gi.CurrentSelectedItem].ItemIndex;
+                gi.Session.SelectItem(idx);
+            } else
+            {
+                // If the search is active and there are no results, we should focus the search box again
+                SetNextCommandPaletteSearchBoxFocused();
+            }
         } else {
             gi.Session.SelectItem(gi.CurrentSelectedItem);
         }
@@ -762,9 +840,14 @@ void CommandPalette(const char* name)
 
     ImGui::EndChild();
 
-    gg.NextCommandPaletteActions = {};
+    if (ImGui::Shortcut(ImGuiKey_UpArrow, ImGuiInputFlags_Repeat)) {
+        gi.CurrentSelectedItem = ImMax(gi.CurrentSelectedItem - 1, 0);
+    } else if (ImGui::Shortcut(ImGuiKey_DownArrow, ImGuiInputFlags_Repeat)) {
+        gi.CurrentSelectedItem = ImMin(gi.CurrentSelectedItem + 1, item_count - 1);
+    }
 
     ImGui::PopID();
+
     gg.CurrentCommandPalette = nullptr;
     // END this command palette
 }
