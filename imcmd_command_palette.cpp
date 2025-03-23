@@ -635,7 +635,7 @@ void CommandPalette(const char* name)
 
         ImVec2 size{
             ImGui::GetContentRegionAvail().x,
-            ImMax(font_regular->FontSize, font_highlight->FontSize),
+            ImGui::GetFontSize()
         };
         ImRect rect{
             window->DC.CursorPos,
@@ -670,7 +670,14 @@ void CommandPalette(const char* name)
                     auto end = text + range_begin;
 
                     draw_list->AddText(text_pos, text_color_regular, begin, end);
+
+#ifdef IMGUI_HAS_TEXTURES
+                    ImGui::PushFont(font_regular);
+                    auto segment_size = ImGui::CalcTextSize(begin, end);
+                    ImGui::PopFont();
+#else
                     auto segment_size = font_regular->CalcTextSizeA(font_regular->FontSize, std::numeric_limits<float>::max(), 0.0f, begin, end);
+#endif
 
                     if (underline_regular) {
                         float x1 = text_pos.x;
@@ -686,8 +693,13 @@ void CommandPalette(const char* name)
                 auto begin = text + range_begin;
                 auto end = text + range_end;
 
-                draw_list->AddText(font_highlight, font_highlight->FontSize * font_scale, text_pos, text_color_highlight, begin, end);
-                auto segment_size = font_highlight->CalcTextSizeA(font_highlight->FontSize * font_scale, std::numeric_limits<float>::max(), 0.0f, begin, end);
+#ifdef IMGUI_HAS_TEXTURES
+                float fh_size = ImGui::GetFontSize();
+#else
+                float fh_size = font_highlight->FontSize;
+#endif
+                draw_list->AddText(font_highlight, fh_size * font_scale, text_pos, text_color_highlight, begin, end);
+                auto segment_size = font_highlight->CalcTextSizeA(fh_size * font_scale, std::numeric_limits<float>::max(), 0.0f, begin, end);
 
                 if (underline_highlight) {
                     float x1 = text_pos.x;
