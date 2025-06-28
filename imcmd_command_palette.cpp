@@ -531,8 +531,7 @@ void CommandPalette(const char* name)
             return instance;
         }
     }();
-
-    float width = ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x;
+    float width = ImGui::GetWindowWidth();
     float search_result_window_height = 400.0f; // TODO config
 
     // BEGIN this command palette
@@ -609,9 +608,6 @@ void CommandPalette(const char* name)
     auto item_active_color = ImGui::GetColorU32(ImGuiCol_HeaderActive);
     auto item_selected_color = ImGui::GetColorU32(ImGuiCol_Header);
 
-    // Could be 0.5 on macOS Retina, 1 elsewhere
-    float font_scale = ImGui::GetIO().FontGlobalScale;
-
     int item_count;
     if (gi.Search.IsActive()) {
         item_count = gi.Search.GetItemCount();
@@ -672,7 +668,7 @@ void CommandPalette(const char* name)
                     draw_list->AddText(text_pos, text_color_regular, begin, end);
 
 #ifdef IMGUI_HAS_TEXTURES
-                    ImGui::PushFont(font_regular);
+                    ImGui::PushFont(font_regular, font_regular->LegacySize);
                     auto segment_size = ImGui::CalcTextSize(begin, end);
                     ImGui::PopFont();
 #else
@@ -698,8 +694,8 @@ void CommandPalette(const char* name)
 #else
                 float fh_size = font_highlight->FontSize;
 #endif
-                draw_list->AddText(font_highlight, fh_size * font_scale, text_pos, text_color_highlight, begin, end);
-                auto segment_size = font_highlight->CalcTextSizeA(fh_size * font_scale, std::numeric_limits<float>::max(), 0.0f, begin, end);
+                draw_list->AddText(font_highlight, fh_size, text_pos, text_color_highlight, begin, end);
+                auto segment_size = font_highlight->CalcTextSizeA(fh_size, std::numeric_limits<float>::max(), 0.0f, begin, end);
 
                 if (underline_highlight) {
                     float x1 = text_pos.x;
