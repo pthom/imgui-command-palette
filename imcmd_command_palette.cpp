@@ -749,13 +749,20 @@ void CommandPalette(const char* name, const char* hint)
             int last_range_end = 0;
 
             auto DrawCurrentRange = [&]() {
+
+                #ifdef IMGUI_HAS_TEXTURES
+                auto fsz = font_regular->GetFontBaked(ImGui::GetFontSize())->Size;
+                #else
+                auto fsz = font_regular->FontSize;
+                #endif
+
                 if (range_begin != last_range_end) {
                     // Draw normal text between last highlighted range end and current highlighted range start
                     auto begin = text + last_range_end;
                     auto end = text + range_begin;
 
                     draw_list->AddText(text_pos, text_color_regular, begin, end);
-                    auto segment_size = font_regular->CalcTextSizeA(font_regular->FontSize * font_scale, std::numeric_limits<float>::max(), 0.0f, begin, end);
+                    auto segment_size = font_regular->CalcTextSizeA(fsz * font_scale, std::numeric_limits<float>::max(), 0.0f, begin, end);
 
                     if (underline_regular) {
                         float x1 = text_pos.x;
@@ -770,9 +777,15 @@ void CommandPalette(const char* name, const char* hint)
 
                 auto begin = text + range_begin;
                 auto end = text + range_end;
+                
+                #ifdef IMGUI_HAS_TEXTURES
+                fsz = font_highlight->GetFontBaked(ImGui::GetFontSize())->Size;
+                #else
+                fsz = font_highlight->FontSize;
+                #endif
 
-                draw_list->AddText(font_highlight, font_highlight->FontSize * font_scale, text_pos, text_color_highlight, begin, end);
-                auto segment_size = font_highlight->CalcTextSizeA(font_highlight->FontSize * font_scale, std::numeric_limits<float>::max(), 0.0f, begin, end);
+                draw_list->AddText(font_highlight, fsz * font_scale, text_pos, text_color_highlight, begin, end);
+                auto segment_size = font_highlight->CalcTextSizeA(fsz * font_scale, std::numeric_limits<float>::max(), 0.0f, begin, end);
 
                 if (underline_highlight) {
                     float x1 = text_pos.x;
