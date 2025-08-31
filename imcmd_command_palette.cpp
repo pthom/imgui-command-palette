@@ -680,7 +680,7 @@ void CommandPalette(const char* name, const char* hint)
     bool underline_highlight = gg.TextStyleFlags[ImCmdTextType_Highlight] & (1 << ImCmdTextFlag_Underline);
 
     // Could be 0.5 on macOS Retina, 1 elsewhere
-    float font_scale = ImGui::GetIO().FontGlobalScale;
+    float font_scale = ImGui::GetIO().FontScaleMain;
 
     if ((int)gi.ExtraData.size() < item_count) {
         gi.ExtraData.resize(item_count);
