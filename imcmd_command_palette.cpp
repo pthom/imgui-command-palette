@@ -680,7 +680,7 @@ void CommandPalette(const char* name, const char* hint)
     bool underline_highlight = gg.TextStyleFlags[ImCmdTextType_Highlight] & (1 << ImCmdTextFlag_Underline);
 
     // Could be 0.5 on macOS Retina, 1 elsewhere
-    float font_scale = ImGui::GetIO().FontScaleMain;
+    float font_scale = ImGui::GetStyle().FontScaleMain;
 
     if ((int)gi.ExtraData.size() < item_count) {
         gi.ExtraData.resize(item_count);
@@ -750,11 +750,11 @@ void CommandPalette(const char* name, const char* hint)
 
             auto DrawCurrentRange = [&]() {
 
-                #ifdef IMGUI_HAS_TEXTURES
+#ifdef IMGUI_HAS_TEXTURES
                 auto fsz = font_regular->GetFontBaked(ImGui::GetFontSize())->Size;
-                #else
+#else
                 auto fsz = font_regular->FontSize;
-                #endif
+#endif
 
                 if (range_begin != last_range_end) {
                     // Draw normal text between last highlighted range end and current highlighted range start
@@ -777,12 +777,12 @@ void CommandPalette(const char* name, const char* hint)
 
                 auto begin = text + range_begin;
                 auto end = text + range_end;
-                
-                #ifdef IMGUI_HAS_TEXTURES
+
+#ifdef IMGUI_HAS_TEXTURES
                 fsz = font_highlight->GetFontBaked(ImGui::GetFontSize())->Size;
-                #else
+#else
                 fsz = font_highlight->FontSize;
-                #endif
+#endif
 
                 draw_list->AddText(font_highlight, fsz * font_scale, text_pos, text_color_highlight, begin, end);
                 auto segment_size = font_highlight->CalcTextSizeA(fsz * font_scale, std::numeric_limits<float>::max(), 0.0f, begin, end);
