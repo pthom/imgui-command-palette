@@ -161,7 +161,7 @@ struct Context
             Commands.end(),
             command,
             [](const Command& a, const Command& b) -> bool {
-                return ImStricmp(a.Name.c_str(), b.Name.c_str()) < 0;
+                return a.Priority > b.Priority || (a.Priority == b.Priority && ImStricmp(a.Name.c_str(), b.Name.c_str()) > 0);
             });
         Commands.insert(location, std::move(command));
     }

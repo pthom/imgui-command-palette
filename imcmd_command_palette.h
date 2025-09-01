@@ -35,6 +35,7 @@ struct Command
     std::string Icon = "";
     std::string Shortcut = "";
     bool* IsChecked = nullptr;
+    int Priority = 0; //< Higher priority commands are listed first. Commands with the same Priority are sorted alphabetically by Name.
 };
 
 // Initialization
