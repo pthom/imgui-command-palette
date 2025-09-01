@@ -679,9 +679,6 @@ void CommandPalette(const char* name, const char* hint)
     bool underline_regular = gg.TextStyleFlags[ImCmdTextType_Regular] & (1 << ImCmdTextFlag_Underline);
     bool underline_highlight = gg.TextStyleFlags[ImCmdTextType_Highlight] & (1 << ImCmdTextFlag_Underline);
 
-    // Could be 0.5 on macOS Retina, 1 elsewhere
-    float font_scale = ImGui::GetStyle().FontScaleMain;
-
     if ((int)gi.ExtraData.size() < item_count) {
         gi.ExtraData.resize(item_count);
     }
@@ -751,7 +748,7 @@ void CommandPalette(const char* name, const char* hint)
             auto DrawCurrentRange = [&]() {
 
 #ifdef IMGUI_HAS_TEXTURES
-                auto fsz = font_regular->GetFontBaked(ImGui::GetFontSize())->Size;
+                auto fsz = ImGui::GetFontSize();
 #else
                 auto fsz = font_regular->FontSize;
 #endif
@@ -762,7 +759,7 @@ void CommandPalette(const char* name, const char* hint)
                     auto end = text + range_begin;
 
                     draw_list->AddText(text_pos, text_color_regular, begin, end);
-                    auto segment_size = font_regular->CalcTextSizeA(fsz * font_scale, std::numeric_limits<float>::max(), 0.0f, begin, end);
+                    auto segment_size = font_regular->CalcTextSizeA(fsz, std::numeric_limits<float>::max(), 0.0f, begin, end);
 
                     if (underline_regular) {
                         float x1 = text_pos.x;
@@ -779,13 +776,13 @@ void CommandPalette(const char* name, const char* hint)
                 auto end = text + range_end;
 
 #ifdef IMGUI_HAS_TEXTURES
-                fsz = font_highlight->GetFontBaked(ImGui::GetFontSize())->Size;
+                fsz = ImGui::GetFontSize();
 #else
                 fsz = font_highlight->FontSize;
 #endif
 
-                draw_list->AddText(font_highlight, fsz * font_scale, text_pos, text_color_highlight, begin, end);
-                auto segment_size = font_highlight->CalcTextSizeA(fsz * font_scale, std::numeric_limits<float>::max(), 0.0f, begin, end);
+                draw_list->AddText(font_highlight, fsz, text_pos, text_color_highlight, begin, end);
+                auto segment_size = font_highlight->CalcTextSizeA(fsz, std::numeric_limits<float>::max(), 0.0f, begin, end);
 
                 if (underline_highlight) {
                     float x1 = text_pos.x;
