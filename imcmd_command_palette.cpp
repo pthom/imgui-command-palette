@@ -651,7 +651,7 @@ void CommandPalette(const char* name, const char* hint)
     // If the list of subcommands is wider, the window would grow as expected, but the command palette
     // would start at this larger width next time it is launched. Launching it yet again would
     // shrink it back to the autofit size.
-    ImGui::SetNextWindowSizeConstraints(ImVec2(available_width, 0), ImVec2(ImGui::GetMainViewport()->Size.x, remaining_height - 100.f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(available_width, ImGui::GetFrameHeight() * 3), ImVec2(ImGui::GetMainViewport()->Size.x, ImMax(ImGui::GetFrameHeight() * 3, remaining_height - 100.f)));
     ImGui::BeginChild("SearchResults", ImVec2(0, search_result_window_height), ImGuiChildFlags_FrameStyle | ImGuiChildFlags_AutoResizeX, ImGuiWindowFlags_NoSavedSettings);
 
     auto font_regular = gg.TextStyleFonts[ImCmdTextType_Regular];
@@ -690,6 +690,7 @@ void CommandPalette(const char* name, const char* hint)
     // Flag used to delay item selection until after the loop ends
     bool select_focused_item = false;
     const ImGuiSelectableFlags selectable_flags = ImGuiSelectableFlags_SelectOnRelease | ImGuiSelectableFlags_NoSetKeyOwner | ImGuiSelectableFlags_SetNavIdOnHover | ImGuiSelectableFlags_SpanAvailWidth;
+    static float sScrollToNextFrame = -1.f;
     for (int i = 0; i < item_count; ++i) {
         // Implement a custom button-like control
 
@@ -717,6 +718,13 @@ void CommandPalette(const char* name, const char* hint)
         {
             select_focused_item = true;
             gi.CurrentSelectedItem = i;
+        }
+
+        if (gi.CurrentSelectedItem == i && sScrollToNextFrame >= 0.f)
+        {
+            if (!ImGui::IsItemVisible())
+                ImGui::SetScrollHereY(sScrollToNextFrame);
+            sScrollToNextFrame = -1.f;
         }
 
         // Draw the icon, shortcut, and checkmark/arrow
@@ -852,8 +860,10 @@ void CommandPalette(const char* name, const char* hint)
 
     if (ImGui::Shortcut(ImGuiKey_UpArrow, ImGuiInputFlags_Repeat)) {
         gi.CurrentSelectedItem = ImMax(gi.CurrentSelectedItem - 1, 0);
+        sScrollToNextFrame = 1.f;
     } else if (ImGui::Shortcut(ImGuiKey_DownArrow, ImGuiInputFlags_Repeat)) {
         gi.CurrentSelectedItem = ImMin(gi.CurrentSelectedItem + 1, item_count - 1);
+        sScrollToNextFrame = 0.f;
     }
 
     ImGui::PopID();
