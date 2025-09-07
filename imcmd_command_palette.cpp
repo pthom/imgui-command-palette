@@ -33,7 +33,6 @@ struct CommandOperationUnregister;
 struct CommandOperation;
 struct Context;
 
-struct ItemExtraData;
 struct Instance;
 
 // =================================================================
@@ -221,17 +220,11 @@ struct Context
     }
 };
 
-struct ItemExtraData
-{
-    bool Hovered = false;
-    bool Held = false;
-};
-
 struct Instance
 {
     ExecutionManager Session;
     SearchManager Search;
-    std::vector<ItemExtraData> ExtraData;
+    float NextFrameScrollTo = -1.f;
 
     int CurrentSelectedItem = 0;
 
@@ -679,10 +672,6 @@ void CommandPalette(const char* name, const char* hint)
     bool underline_regular = gg.TextStyleFlags[ImCmdTextType_Regular] & (1 << ImCmdTextFlag_Underline);
     bool underline_highlight = gg.TextStyleFlags[ImCmdTextType_Highlight] & (1 << ImCmdTextFlag_Underline);
 
-    if ((int)gi.ExtraData.size() < item_count) {
-        gi.ExtraData.resize(item_count);
-    }
-
     auto window = ImGui::GetCurrentContext()->CurrentWindow;
     auto draw_list = window->DrawList;
     auto offsets = &window->DC.MenuColumns;
@@ -690,7 +679,6 @@ void CommandPalette(const char* name, const char* hint)
     // Flag used to delay item selection until after the loop ends
     bool select_focused_item = false;
     const ImGuiSelectableFlags selectable_flags = ImGuiSelectableFlags_SelectOnRelease | ImGuiSelectableFlags_NoSetKeyOwner | ImGuiSelectableFlags_SetNavIdOnHover | ImGuiSelectableFlags_SpanAvailWidth;
-    static float sScrollToNextFrame = -1.f;
     for (int i = 0; i < item_count; ++i) {
         // Implement a custom button-like control
 
@@ -720,11 +708,11 @@ void CommandPalette(const char* name, const char* hint)
             gi.CurrentSelectedItem = i;
         }
 
-        if (gi.CurrentSelectedItem == i && sScrollToNextFrame >= 0.f)
+        if (gi.CurrentSelectedItem == i && gi.NextFrameScrollTo >= 0.f)
         {
             if (!ImGui::IsItemVisible())
-                ImGui::SetScrollHereY(sScrollToNextFrame);
-            sScrollToNextFrame = -1.f;
+                ImGui::SetScrollHereY(gi.NextFrameScrollTo);
+            gi.NextFrameScrollTo = -1.f;
         }
 
         // Draw the icon, shortcut, and checkmark/arrow
@@ -840,36 +828,59 @@ void CommandPalette(const char* name, const char* hint)
         ImGui::PopID();
     }
 
-    if (ImGui::IsKeyPressed(ImGuiKey_Enter) || select_focused_item) {
-        if (gi.Search.IsActive()) {
-            if (!gi.Search.SearchResults.empty())
-            {
-                auto idx = gi.Search.SearchResults[gi.CurrentSelectedItem].ItemIndex;
-                gi.Session.SelectItem(idx);
-            } else
-            {
-                // If the search is active and there are no results, we should focus the search box again
-                SetNextCommandPaletteSearchBoxFocused();
-            }
-        } else {
-            gi.Session.SelectItem(gi.CurrentSelectedItem);
-        }
-    }
-
     ImGui::EndChild();
 
-    if (ImGui::Shortcut(ImGuiKey_UpArrow, ImGuiInputFlags_Repeat)) {
-        gi.CurrentSelectedItem = ImMax(gi.CurrentSelectedItem - 1, 0);
-        sScrollToNextFrame = 1.f;
-    } else if (ImGui::Shortcut(ImGuiKey_DownArrow, ImGuiInputFlags_Repeat)) {
-        gi.CurrentSelectedItem = ImMin(gi.CurrentSelectedItem + 1, item_count - 1);
-        sScrollToNextFrame = 0.f;
+    if (select_focused_item) {
+        SelectFocusedItem();
     }
 
     ImGui::PopID();
+}
 
-    gg.CurrentCommandPalette = nullptr;
-    // END this command palette
+void SelectFocusedItem()
+{
+    IM_ASSERT(gContext != nullptr);
+    IM_ASSERT(gContext->CurrentCommandPalette != nullptr);
+    auto& gi = *gContext->CurrentCommandPalette;
+    if (gi.Search.IsActive()) {
+        if (!gi.Search.SearchResults.empty())
+        {
+            auto idx = gi.Search.SearchResults[gi.CurrentSelectedItem].ItemIndex;
+            gi.Session.SelectItem(idx);
+        } else
+        {
+            // If the search is active and there are no results, we should focus the search box again
+            SetNextCommandPaletteSearchBoxFocused();
+        }
+    } else {
+        gi.Session.SelectItem(gi.CurrentSelectedItem);
+    }
+}
+
+void FocusPreviousItem()
+{
+    IM_ASSERT(gContext != nullptr);
+    IM_ASSERT(gContext->CurrentCommandPalette != nullptr);
+    auto& gi = *gContext->CurrentCommandPalette;
+    int item_count = gi.Search.IsActive() ? gi.Search.GetItemCount() : gi.Session.GetItemCount();
+    gi.CurrentSelectedItem = ImMax(gi.CurrentSelectedItem - 1, 0);
+    gi.NextFrameScrollTo = 1.f;
+}
+
+void FocusNextItem()
+{
+    IM_ASSERT(gContext != nullptr);
+    IM_ASSERT(gContext->CurrentCommandPalette != nullptr);
+    auto& gi = *gContext->CurrentCommandPalette;
+    int item_count = gi.Search.IsActive() ? gi.Search.GetItemCount() : gi.Session.GetItemCount();
+    gi.CurrentSelectedItem = ImMin(gi.CurrentSelectedItem + 1, item_count - 1);
+    gi.NextFrameScrollTo = 0.f;
+}
+
+void EndCommandPalette()
+{
+    IM_ASSERT(gContext != nullptr);
+    gContext->CurrentCommandPalette = nullptr;
 }
 
 bool IsAnyItemSelected()
@@ -926,10 +937,20 @@ void CommandPaletteWindow(const char* name, bool* p_open)
 
     CommandPalette(name);
 
-    if (IsAnyItemSelected()) {
-        *p_open = false;
+    if (!IsAnyItemSelected())
+    {
+        if (ImGui::Shortcut(ImGuiKey_UpArrow, ImGuiInputFlags_Repeat)) {
+            FocusPreviousItem();
+        } else if (ImGui::Shortcut(ImGuiKey_DownArrow, ImGuiInputFlags_Repeat)) {
+            FocusNextItem();
+        } else if (ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+            SelectFocusedItem();
+        }
     }
-    if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) {
+
+    EndCommandPalette();
+
+    if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) || IsAnyItemSelected()) {
         // Close popup when user unfocused the command palette window (clicking elsewhere)
         *p_open = false;
     }

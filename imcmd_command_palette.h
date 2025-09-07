@@ -66,7 +66,14 @@ void ClearStyleColor(ImCmdTextType type); //< Clear the style color for the give
 // Command palette widget
 void SetNextCommandPaletteSearch(const char* text);
 void SetNextCommandPaletteSearchBoxFocused();
+// Must call EndCommandPalette() if CommandPalette() was called
 void CommandPalette(const char* name, const char* hint = nullptr);
+// The following 3 functions can only be called between CommandPalette() and EndCommandPalette()
+void SelectFocusedItem();
+void FocusPreviousItem();
+void FocusNextItem();
+// Must call EndCommandPalette() if CommandPalette() was called
+void EndCommandPalette();
 bool IsAnyItemSelected();
 
 void RemoveCache(const char* name);
