@@ -41,8 +41,21 @@ struct Instance;
 
 struct StackFrame
 {
+    ImCmdInputType InputType = ImCmdInputType_Discrete;
+
+    // For discrete options
     std::vector<std::string> Options;
     int SelectedOption = -1;
+
+    // For text/numeric input
+    char InputBuffer[256] = {};
+    std::string Hint;
+    HelpFunc GetHelpText;
+    ValidationFunc ValidateInput;
+
+    // For widget
+    std::function<bool()> WidgetCallback;
+    std::string WidgetHelpText;
 };
 
 class ExecutionManager
@@ -65,6 +78,11 @@ public:
     void SelectItem(int idx);
 
     void PushOptions(std::vector<std::string> options);
+    void PushPrompt(const PromptConfig& config);
+    void SubmitTextInput(const std::string& input);
+    void SubmitWidget();
+    ImCmdInputType GetCurrentInputType() const;
+    const StackFrame* GetCurrentFrame() const;
 };
 
 struct SearchResult
@@ -232,6 +250,7 @@ struct Instance
     {
         bool RefreshSearch = false;
         bool ClearSearch = false;
+        bool FocusInput = false;
     } PendingActions;
 
     Instance()
@@ -358,9 +377,121 @@ void ExecutionManager::PushOptions(std::vector<std::string> options)
     m_CallStack.push_back({});
     auto& frame = m_CallStack.back();
 
+    frame.InputType = ImCmdInputType_Discrete;
     frame.Options = std::move(options);
 
     m_Instance->PendingActions.ClearSearch = true;
+}
+
+void ExecutionManager::PushPrompt(const PromptConfig& config)
+{
+    m_CallStack.push_back({});
+    auto& frame = m_CallStack.back();
+
+    frame.InputType = config.Type;
+
+    switch (config.Type)
+    {
+        case ImCmdInputType_Discrete:
+            frame.Options = config.Options;
+            break;
+        case ImCmdInputType_Text:
+        case ImCmdInputType_Int:
+        case ImCmdInputType_Float:
+            frame.Hint = config.Hint;
+            frame.GetHelpText = config.GetHelpText;
+            frame.ValidateInput = config.ValidateInput;
+            m_Instance->PendingActions.FocusInput = true;
+            break;
+        case ImCmdInputType_Widget:
+            frame.WidgetCallback = config.WidgetCallback;
+            frame.WidgetHelpText = config.WidgetHelpText;
+            break;
+    }
+
+    m_Instance->PendingActions.ClearSearch = true;
+}
+
+void ExecutionManager::SubmitTextInput(const std::string& input)
+{
+    auto cmd = m_ExecutingCommand;
+    if (!cmd) return;
+
+    size_t initial_call_stack_height = m_CallStack.size();
+
+    gContext->IsExecuting = true;
+    InvokeSafe(cmd->TextInputCallback, input);
+    gContext->IsExecuting = false;
+
+    size_t final_call_stack_height = m_CallStack.size();
+    if (initial_call_stack_height == final_call_stack_height)
+    {
+        // Command completed
+        gContext->IsTerminating = true;
+        InvokeSafe(m_ExecutingCommand->TerminatingCallback);
+        gContext->IsTerminating = false;
+
+        m_ExecutingCommand = nullptr;
+        m_CallStack.clear();
+        --gContext->CommandStorageLocks;
+
+        m_Instance->PendingActions.ClearSearch = true;
+        m_Instance->CurrentSelectedItem = 0;
+
+        gContext->LastCommandPaletteStatus.ItemSelected = true;
+    } else
+    {
+        m_Instance->PendingActions.ClearSearch = true;
+        m_Instance->CurrentSelectedItem = 0;
+    }
+}
+
+void ExecutionManager::SubmitWidget()
+{
+    auto cmd = m_ExecutingCommand;
+    if (!cmd) return;
+
+    size_t initial_call_stack_height = m_CallStack.size();
+
+    gContext->IsExecuting = true;
+    InvokeSafe(cmd->WidgetCompleteCallback);
+    gContext->IsExecuting = false;
+
+    size_t final_call_stack_height = m_CallStack.size();
+    if (initial_call_stack_height == final_call_stack_height)
+    {
+        // Command completed
+        gContext->IsTerminating = true;
+        InvokeSafe(m_ExecutingCommand->TerminatingCallback);
+        gContext->IsTerminating = false;
+
+        m_ExecutingCommand = nullptr;
+        m_CallStack.clear();
+        --gContext->CommandStorageLocks;
+
+        m_Instance->PendingActions.ClearSearch = true;
+        m_Instance->CurrentSelectedItem = 0;
+
+        gContext->LastCommandPaletteStatus.ItemSelected = true;
+    } else
+    {
+        m_Instance->PendingActions.ClearSearch = true;
+        m_Instance->CurrentSelectedItem = 0;
+    }
+}
+
+ImCmdInputType ExecutionManager::GetCurrentInputType() const
+{
+    if (m_CallStack.empty())
+        return ImCmdInputType_Discrete;
+    return m_CallStack.back().InputType;
+}
+
+const StackFrame* ExecutionManager::GetCurrentFrame() const
+{
+    if (m_CallStack.empty())
+        return nullptr;
+    return &m_CallStack.back();
 }
 
 int SearchManager::GetItemCount() const
@@ -618,20 +749,125 @@ void CommandPalette(const char* name, const char* hint)
         gi.Search.RefreshSearchResults();
     }
 
+    // Save the FocusInput flag before clearing PendingActions
+    bool should_focus_input = gi.PendingActions.FocusInput;
+
     gi.PendingActions = {};
     // END procesisng PendingActions
 
-    if (gg.NextCommandPaletteActions.FocusSearchBox) {
-        // Focus the search box when user first brings command palette window up
-        // Note: this only affects the next frame
-        ImGui::SetKeyboardFocusHere(0);
+    // Determine the current input type
+    ImCmdInputType input_type = gi.Session.GetCurrentInputType();
+    const StackFrame* current_frame = gi.Session.GetCurrentFrame();
+
+    bool should_focus = gg.NextCommandPaletteActions.FocusSearchBox;
+    if (should_focus) {
         gg.NextCommandPaletteActions.FocusSearchBox = false;
     }
+
     float available_width = ImGui::GetContentRegionAvail().x;
     ImGui::SetNextItemWidth(available_width);
-    if (ImGui::InputTextWithHint("##SearchBox", hint, gi.Search.SearchText, IM_ARRAYSIZE(gi.Search.SearchText))) {
-        // Search string updated, update search results
-        gi.Search.RefreshSearchResults();
+
+    // Render appropriate input control based on input type
+    if (input_type == ImCmdInputType_Discrete)
+    {
+        // Original discrete search behavior
+        if (should_focus) {
+            ImGui::SetKeyboardFocusHere(0);
+        }
+        if (ImGui::InputTextWithHint("##SearchBox", hint, gi.Search.SearchText, IM_ARRAYSIZE(gi.Search.SearchText))) {
+            // Search string updated, update search results
+            gi.Search.RefreshSearchResults();
+        }
+    } else if (input_type == ImCmdInputType_Text || input_type == ImCmdInputType_Int || input_type == ImCmdInputType_Float)
+    {
+        // Text/numeric input field
+        char* input_buffer = current_frame ? const_cast<char*>(current_frame->InputBuffer) : nullptr;
+        const char* hint_text = current_frame ? current_frame->Hint.c_str() : "";
+
+        if (input_buffer)
+        {
+            ImGuiInputTextFlags input_flags = ImGuiInputTextFlags_EnterReturnsTrue;
+            if (input_type == ImCmdInputType_Int || input_type == ImCmdInputType_Float)
+                input_flags |= ImGuiInputTextFlags_CharsDecimal;
+
+            // Focus the input field if requested
+            if (should_focus_input) {
+                ImGui::SetKeyboardFocusHere(0);
+            }
+            bool submitted = ImGui::InputTextWithHint("##InputBox", hint_text, input_buffer, 256, input_flags);
+
+            // Validate input
+            std::string validation_error;
+            if (current_frame && current_frame->ValidateInput)
+            {
+                validation_error = current_frame->ValidateInput(input_buffer);
+            } else if (input_type == ImCmdInputType_Int && strlen(input_buffer) > 0)
+            {
+                // Default integer validation
+                char* end;
+                std::strtol(input_buffer, &end, 10);
+                if (*end != '\0')
+                    validation_error = "Must be an integer";
+            } else if (input_type == ImCmdInputType_Float && strlen(input_buffer) > 0)
+            {
+                // Default float validation
+                char* end;
+                std::strtof(input_buffer, &end);
+                if (*end != '\0')
+                    validation_error = "Must be a number";
+            }
+
+            // Show validation error or help text
+            if (!validation_error.empty())
+            {
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", validation_error.c_str());
+            } else if (current_frame && current_frame->GetHelpText)
+            {
+                std::string help_text = current_frame->GetHelpText(input_buffer);
+                if (!help_text.empty())
+                {
+                    ImGui::TextWrapped("%s", help_text.c_str());
+                }
+            }
+
+            // Submit on Enter key if validation passes
+            if (submitted && validation_error.empty() && strlen(input_buffer) > 0)
+            {
+                gi.Session.SubmitTextInput(input_buffer);
+            } else if (submitted)
+            {
+                // If Enter was pressed but validation failed, restore focus to the input
+                gi.PendingActions.FocusInput = true;
+            }
+        }
+
+        // Skip the list rendering for text/numeric input
+        ImGui::PopID();
+        return;
+    } else if (input_type == ImCmdInputType_Widget)
+    {
+        // Custom widget rendering
+        if (current_frame && current_frame->WidgetCallback)
+        {
+            // Show help text if available
+            if (!current_frame->WidgetHelpText.empty())
+            {
+                ImGui::TextWrapped("%s", current_frame->WidgetHelpText.c_str());
+                ImGui::Spacing();
+            }
+
+            // Call the widget callback
+            bool widget_complete = current_frame->WidgetCallback();
+
+            if (widget_complete)
+            {
+                gi.Session.SubmitWidget();
+            }
+        }
+
+        // Skip the list rendering for widget input
+        ImGui::PopID();
+        return;
     }
 
     int item_count = gi.Search.IsActive() ? gi.Search.GetItemCount() : gi.Session.GetItemCount();
@@ -676,6 +912,21 @@ void CommandPalette(const char* name, const char* hint)
     auto draw_list = window->DrawList;
     auto offsets = &window->DC.MenuColumns;
 
+    // Check if any item in the full unfiltered list has an icon
+    // If so, always reserve space for icons even when filtered results don't have any
+    bool has_any_icon = false;
+    float reserved_icon_width = 0.0f;
+    int full_item_count = gi.Session.GetItemCount();
+    for (int i = 0; i < full_item_count; ++i) {
+        auto icon = gi.Session.GetIcon(i);
+        if (icon && icon[0]) {
+            has_any_icon = true;
+            // Calculate the actual width of this icon to use as reserved space
+            reserved_icon_width = ImGui::CalcTextSize(icon, NULL).x;
+            break;
+        }
+    }
+
     // Flag used to delay item selection until after the loop ends
     bool select_focused_item = false;
     const ImGuiSelectableFlags selectable_flags = ImGuiSelectableFlags_SelectOnRelease | ImGuiSelectableFlags_NoSetKeyOwner | ImGuiSelectableFlags_SetNavIdOnHover | ImGuiSelectableFlags_SpanAvailWidth;
@@ -695,6 +946,10 @@ void CommandPalette(const char* name, const char* hint)
 
         ImVec2 text_size = ImGui::CalcTextSize(text, NULL, true);
         float icon_w = (icon && icon[0]) ? ImGui::CalcTextSize(icon, NULL).x : 0.0f;
+        // If any item in the full list has an icon, reserve space even if current item doesn't
+        if (has_any_icon && icon_w == 0.0f) {
+            icon_w = reserved_icon_width; // Use the actual width of an existing icon
+        }
         float shortcut_w = (shortcut && shortcut[0]) ? ImGui::CalcTextSize(shortcut, NULL).x : 0.0f;
         float checkmark_w = IM_TRUNC(g.FontSize * 1.20f);
         float min_w = offsets->DeclColumns(icon_w, text_size.x, shortcut_w, checkmark_w); // Feedback for next frame
@@ -877,6 +1132,66 @@ void FocusNextItem()
     gi.NextFrameScrollTo = 0.f;
 }
 
+void Submit()
+{
+    IM_ASSERT(gContext != nullptr);
+    IM_ASSERT(gContext->CurrentCommandPalette != nullptr);
+    auto& gi = *gContext->CurrentCommandPalette;
+
+    ImCmdInputType input_type = gi.Session.GetCurrentInputType();
+    const StackFrame* current_frame = gi.Session.GetCurrentFrame();
+
+    if (input_type == ImCmdInputType_Text || input_type == ImCmdInputType_Int || input_type == ImCmdInputType_Float)
+    {
+        // For text/numeric inputs, validate and submit
+        const char* input_buffer = current_frame ? current_frame->InputBuffer : "";
+
+        if (strlen(input_buffer) == 0)
+        {
+            gi.PendingActions.FocusInput = true;
+            return;
+        }
+
+        // Validate input
+        std::string validation_error;
+        if (current_frame && current_frame->ValidateInput)
+        {
+            validation_error = current_frame->ValidateInput(input_buffer);
+        } else if (input_type == ImCmdInputType_Int)
+        {
+            // Default integer validation
+            char* end;
+            std::strtol(input_buffer, &end, 10);
+            if (*end != '\0')
+                validation_error = "Must be an integer";
+        } else if (input_type == ImCmdInputType_Float)
+        {
+            // Default float validation
+            char* end;
+            std::strtof(input_buffer, &end);
+            if (*end != '\0')
+                validation_error = "Must be a number";
+        }
+
+        if (validation_error.empty())
+        {
+            gi.Session.SubmitTextInput(input_buffer);
+        } else
+        {
+            // If validation failed, restore focus to the input
+            gi.PendingActions.FocusInput = true;
+        }
+    } else if (input_type == ImCmdInputType_Widget)
+    {
+        // For widget inputs, trigger submission
+        gi.Session.SubmitWidget();
+    } else
+    {
+        // For discrete choices, select the focused item
+        SelectFocusedItem();
+    }
+}
+
 void EndCommandPalette()
 {
     IM_ASSERT(gContext != nullptr);
@@ -967,5 +1282,124 @@ void Prompt(std::vector<std::string> options)
 
     auto& gi = *gContext->CurrentCommandPalette;
     gi.Session.PushOptions(std::move(options));
+}
+
+void Prompt(const PromptConfig& config)
+{
+    IM_ASSERT(gContext != nullptr);
+    IM_ASSERT(gContext->CurrentCommandPalette != nullptr);
+    IM_ASSERT(gContext->IsExecuting);
+    IM_ASSERT(!gContext->IsTerminating);
+
+    auto& gi = *gContext->CurrentCommandPalette;
+    gi.Session.PushPrompt(config);
+}
+
+void PromptText(const std::string& hint, HelpFunc help_func, ValidationFunc validate_func)
+{
+    PromptConfig config;
+    config.Type = ImCmdInputType_Text;
+    config.Hint = hint;
+    config.GetHelpText = help_func;
+    config.ValidateInput = validate_func;
+    Prompt(config);
+}
+
+void PromptInt(const std::string& hint, HelpFunc help_func, ValidationFunc validate_func)
+{
+    PromptConfig config;
+    config.Type = ImCmdInputType_Int;
+    config.Hint = hint;
+    config.GetHelpText = help_func;
+    config.ValidateInput = validate_func;
+    Prompt(config);
+}
+
+void PromptFloat(const std::string& hint, HelpFunc help_func, ValidationFunc validate_func)
+{
+    PromptConfig config;
+    config.Type = ImCmdInputType_Float;
+    config.Hint = hint;
+    config.GetHelpText = help_func;
+    config.ValidateInput = validate_func;
+    Prompt(config);
+}
+
+void PromptWidget(std::function<bool()> widget_func, const std::string& help_text)
+{
+    PromptConfig config;
+    config.Type = ImCmdInputType_Widget;
+    config.WidgetCallback = widget_func;
+    config.WidgetHelpText = help_text;
+    Prompt(config);
+}
+
+ValidationFunc ValidateIntRange(int min_val, int max_val)
+{
+    return [min_val, max_val](const char* input) -> std::string {
+        if (strlen(input) == 0)
+            return ""; // Empty is OK, user still typing
+
+        char* end;
+        long val = std::strtol(input, &end, 10);
+
+        if (*end != '\0')
+            return "Must be an integer";
+
+        if (val < min_val || val > max_val)
+        {
+            char buf[256];
+            ImFormatString(buf, IM_ARRAYSIZE(buf), "Must be between %d and %d", min_val, max_val);
+            return buf;
+        }
+
+        return "";
+    };
+}
+
+ValidationFunc ValidateFloatRange(float min_val, float max_val)
+{
+    return [min_val, max_val](const char* input) -> std::string {
+        if (strlen(input) == 0)
+            return "";
+
+        char* end;
+        float val = std::strtof(input, &end);
+
+        if (*end != '\0')
+            return "Must be a number";
+
+        if (val < min_val || val > max_val)
+        {
+            char buf[256];
+            ImFormatString(buf, IM_ARRAYSIZE(buf), "Must be between %.2f and %.2f", min_val, max_val);
+            return buf;
+        }
+
+        return "";
+    };
+}
+
+ValidationFunc ValidateNotEmpty()
+{
+    return [](const char* input) -> std::string {
+        return (strlen(input) == 0) ? "Input required" : "";
+    };
+}
+
+ValidationFunc CombineValidators(std::vector<ValidationFunc> validators)
+{
+    return [validators = std::move(validators)](const char* input) -> std::string {
+        for (const auto& validator : validators)
+        {
+            if (validator)
+            {
+                std::string error = validator(input);
+                if (!error.empty())
+                    return error;
+            }
+        }
+        return "";
+    };
 }
 } // namespace ImCmd
