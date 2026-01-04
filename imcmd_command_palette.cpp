@@ -91,6 +91,7 @@ struct SearchResult
     int Score;
     int MatchCount;
     uint8_t Matches[32];
+    int MatchedNameIndex = 0; // 0 if matched primary name, >0 for aliases (index into Names vector)
 };
 
 class SearchManager
@@ -178,7 +179,7 @@ struct Context
             Commands.end(),
             command,
             [](const Command& a, const Command& b) -> bool {
-                return a.Priority > b.Priority || (a.Priority == b.Priority && ImStricmp(a.Name.c_str(), b.Name.c_str()) > 0);
+                return a.Priority > b.Priority || (a.Priority == b.Priority && ImStricmp(a.Names[0].c_str(), b.Names[0].c_str()) > 0);
             });
         Commands.insert(location, std::move(command));
     }
@@ -189,12 +190,12 @@ struct Context
         {
             bool operator()(const Command& command, const char* str) const
             {
-                return ImStricmp(command.Name.c_str(), str) < 0;
+                return ImStricmp(command.Names[0].c_str(), str) < 0;
             }
 
             bool operator()(const char* str, const Command& command) const
             {
-                return ImStricmp(str, command.Name.c_str()) < 0;
+                return ImStricmp(str, command.Names[0].c_str()) < 0;
             }
         };
 
@@ -278,7 +279,7 @@ const char* ExecutionManager::GetItem(int idx) const
     if (m_ExecutingCommand) {
         return m_CallStack.back().Options[idx].c_str();
     } else {
-        return gContext->Commands[idx].Name.c_str();
+        return gContext->Commands[idx].Names[0].c_str();
     }
 }
 
@@ -556,10 +557,40 @@ void SearchManager::RefreshSearchResults()
     int item_count = m_Instance->Session.GetItemCount();
     for (int i = 0; i < item_count; ++i) {
         const char* text = m_Instance->Session.GetItem(i);
-        SearchResult result;
-        if (FuzzySearch(SearchText, text, result.Score, result.Matches, IM_ARRAYSIZE(result.Matches), result.MatchCount)) {
-            result.ItemIndex = i;
-            SearchResults.push_back(result);
+        SearchResult best_result;
+        best_result.ItemIndex = i;
+        best_result.Score = -1;
+        best_result.MatchedNameIndex = 0;
+
+        // Try matching against all names (primary name at index 0, aliases at 1+)
+        if (i < (int)gContext->Commands.size()) {
+            const auto& names = gContext->Commands[i].Names;
+            for (int name_idx = 0; name_idx < (int)names.size(); ++name_idx) {
+                SearchResult name_result;
+                if (FuzzySearch(SearchText, names[name_idx].c_str(), name_result.Score, name_result.Matches, IM_ARRAYSIZE(name_result.Matches), name_result.MatchCount)) {
+                    // Aliases get lower scores
+                    if (name_idx > 0)
+                        name_result.Score = name_result.Score * 0.75f;
+
+                    if (name_result.Score > best_result.Score) {
+                        best_result = name_result;
+                        best_result.ItemIndex = i;
+                        best_result.MatchedNameIndex = name_idx;
+                    }
+                }
+            }
+        } else {
+            // For subcommand options, just match against the text directly
+            SearchResult name_result;
+            if (FuzzySearch(SearchText, text, name_result.Score, name_result.Matches, IM_ARRAYSIZE(name_result.Matches), name_result.MatchCount)) {
+                best_result = name_result;
+                best_result.ItemIndex = i;
+                best_result.MatchedNameIndex = 0;
+            }
+        }
+
+        if (best_result.Score >= 0) {
+            SearchResults.push_back(best_result);
         }
     }
 
@@ -873,15 +904,11 @@ void CommandPalette(const char* name, const char* hint)
     int item_count = gi.Search.IsActive() ? gi.Search.GetItemCount() : gi.Session.GetItemCount();
 
     float remaining_height = ImGui::GetMainViewport()->Size.y - ImGui::GetCursorScreenPos().y;
-    float search_result_window_height = ImGui::GetTextLineHeightWithSpacing() * item_count + style.FramePadding.y - 1.0f;
+    float search_result_window_height = ImGui::GetTextLineHeightWithSpacing() * item_count + style.FramePadding.y;
 
-    // If the parent window is set to auto resize, then it and the child below will automatically
-    // grow based on the width of the search results. However, the behavior seems buggy:
-    // If the list of subcommands is wider, the window would grow as expected, but the command palette
-    // would start at this larger width next time it is launched. Launching it yet again would
-    // shrink it back to the autofit size.
-    ImGui::SetNextWindowSizeConstraints(ImVec2(available_width, ImGui::GetFrameHeight() * 3), ImVec2(ImGui::GetMainViewport()->Size.x, ImMax(ImGui::GetFrameHeight() * 3, remaining_height - 100.f)));
-    ImGui::BeginChild("SearchResults", ImVec2(0, search_result_window_height), ImGuiChildFlags_FrameStyle | ImGuiChildFlags_AutoResizeX, ImGuiWindowFlags_NoSavedSettings);
+    // Use the available width to prevent horizontal overflow
+    // The child window should fit within the parent window's content region
+    ImGui::BeginChild("SearchResults", ImVec2(available_width, ImMin(search_result_window_height, remaining_height - 100.f)), ImGuiChildFlags_FrameStyle, ImGuiWindowFlags_NoSavedSettings);
 
     auto font_regular = gg.TextStyleFonts[ImCmdTextType_Regular];
     if (!font_regular) {
@@ -991,89 +1018,127 @@ void CommandPalette(const char* name, const char* hint)
             // If we have started searching, draw text with highlights at matched chars
 
             auto& search_result = gi.Search.SearchResults[i];
+            bool is_alias_match = search_result.MatchedNameIndex > 0;
 
-            int range_begin;
-            int range_end;
-            int last_range_end = 0;
+            // Helper lambda to draw text with highlighted matches
+            auto DrawHighlightedText = [&](const char* display_text) {
+                int range_begin;
+                int range_end;
+                int last_range_end = 0;
 
-            auto DrawCurrentRange = [&]() {
+                auto DrawRange = [&]() {
+#ifdef IMGUI_HAS_TEXTURES
+                    auto fsz = ImGui::GetFontSize();
+#else
+                    auto fsz = font_regular->FontSize;
+#endif
 
+                    if (range_begin != last_range_end) {
+                        // Draw normal text between last highlighted range end and current highlighted range start
+                        auto begin = display_text + last_range_end;
+                        auto end = display_text + range_begin;
+
+                        draw_list->AddText(text_pos, text_color_regular, begin, end);
+                        auto segment_size = font_regular->CalcTextSizeA(fsz, std::numeric_limits<float>::max(), 0.0f, begin, end);
+
+                        if (underline_regular) {
+                            float x1 = text_pos.x;
+                            float x2 = text_pos.x + segment_size.x;
+                            float y = text_pos.y + segment_size.y;
+                            // TODO adjust this to be at text baseline instead
+                            draw_list->AddLine(ImVec2(x1, y), ImVec2(x2, y), text_color_regular);
+                        }
+
+                        text_pos.x += segment_size.x;
+                    }
+
+                    auto begin = display_text + range_begin;
+                    auto end = display_text + range_end;
+
+#ifdef IMGUI_HAS_TEXTURES
+                    fsz = ImGui::GetFontSize();
+#else
+                    fsz = font_highlight->FontSize;
+#endif
+
+                    draw_list->AddText(font_highlight, fsz, text_pos, text_color_highlight, begin, end);
+                    auto segment_size = font_highlight->CalcTextSizeA(fsz, std::numeric_limits<float>::max(), 0.0f, begin, end);
+
+                    if (underline_highlight) {
+                        float x1 = text_pos.x;
+                        float x2 = text_pos.x + segment_size.x;
+                        // TODO adjust this to be at text baseline instead
+                        float y = text_pos.y + segment_size.y;
+                        draw_list->AddLine(ImVec2(x1, y), ImVec2(x2, y), text_color_highlight);
+                    }
+
+                    text_pos.x += segment_size.x;
+                };
+
+                IM_ASSERT(search_result.MatchCount >= 1);
+                range_begin = search_result.Matches[0];
+                range_end = range_begin;
+
+                int last_char_idx = -1;
+                for (int j = 0; j < search_result.MatchCount; ++j) {
+                    int char_idx = search_result.Matches[j];
+
+                    if ( // These 2 indices are consecutive, extend our current range by 1
+                        char_idx == last_char_idx + 1) {
+                        ++range_end;
+                    } else {
+                        DrawRange();
+                        last_range_end = range_end;
+                        range_begin = char_idx;
+                        range_end = char_idx + 1;
+                    }
+
+                    last_char_idx = char_idx;
+                }
+                // Draw the remaining range (if any)
+
+                if (range_begin != range_end) {
+                    DrawRange();
+                }
+
+                // Draw the text after the last range (if any)
+                const char* remaining_text = display_text + range_end;
+                draw_list->AddText(text_pos, text_color_regular, remaining_text);
 #ifdef IMGUI_HAS_TEXTURES
                 auto fsz = ImGui::GetFontSize();
 #else
                 auto fsz = font_regular->FontSize;
 #endif
-
-                if (range_begin != last_range_end) {
-                    // Draw normal text between last highlighted range end and current highlighted range start
-                    auto begin = text + last_range_end;
-                    auto end = text + range_begin;
-
-                    draw_list->AddText(text_pos, text_color_regular, begin, end);
-                    auto segment_size = font_regular->CalcTextSizeA(fsz, std::numeric_limits<float>::max(), 0.0f, begin, end);
-
-                    if (underline_regular) {
-                        float x1 = text_pos.x;
-                        float x2 = text_pos.x + segment_size.x;
-                        float y = text_pos.y + segment_size.y;
-                        // TODO adjust this to be at text baseline instead
-                        draw_list->AddLine(ImVec2(x1, y), ImVec2(x2, y), text_color_regular);
-                    }
-
-                    text_pos.x += segment_size.x;
-                }
-
-                auto begin = text + range_begin;
-                auto end = text + range_end;
-
-#ifdef IMGUI_HAS_TEXTURES
-                fsz = ImGui::GetFontSize();
-#else
-                fsz = font_highlight->FontSize;
-#endif
-
-                draw_list->AddText(font_highlight, fsz, text_pos, text_color_highlight, begin, end);
-                auto segment_size = font_highlight->CalcTextSizeA(fsz, std::numeric_limits<float>::max(), 0.0f, begin, end);
-
-                if (underline_highlight) {
-                    float x1 = text_pos.x;
-                    float x2 = text_pos.x + segment_size.x;
-                    float y = text_pos.y + segment_size.y;
-                    // TODO adjust this to be at text baseline instead
-                    draw_list->AddLine(ImVec2(x1, y), ImVec2(x2, y), text_color_highlight);
-                }
-
-                text_pos.x += segment_size.x;
+                auto remaining_size = font_regular->CalcTextSizeA(fsz, std::numeric_limits<float>::max(), 0.0f, remaining_text);
+                text_pos.x += remaining_size.x;
             };
 
-            IM_ASSERT(search_result.MatchCount >= 1);
-            range_begin = search_result.Matches[0];
-            range_end = range_begin;
+            if (is_alias_match) {
+                // Matched an alias: show command name (unhighlighted) then alias (highlighted) in parentheses
+                draw_list->AddText(text_pos, text_color_regular, text);
+#ifdef IMGUI_HAS_TEXTURES
+                auto fsz = ImGui::GetFontSize();
+#else
+                auto fsz = font_regular->FontSize;
+#endif
+                auto name_size = font_regular->CalcTextSizeA(fsz, std::numeric_limits<float>::max(), 0.0f, text);
+                text_pos.x += name_size.x;
 
-            int last_char_idx = -1;
-            for (int j = 0; j < search_result.MatchCount; ++j) {
-                int char_idx = search_result.Matches[j];
+                const char* space_paren = " (";
+                draw_list->AddText(text_pos, text_color_regular, space_paren);
+                auto space_size = font_regular->CalcTextSizeA(fsz, std::numeric_limits<float>::max(), 0.0f, space_paren);
+                text_pos.x += space_size.x;
 
-                if (char_idx == last_char_idx + 1) {
-                    // These 2 indices are equal, extend our current range by 1
-                    ++range_end;
-                } else {
-                    DrawCurrentRange();
-                    last_range_end = range_end;
-                    range_begin = char_idx;
-                    range_end = char_idx + 1;
-                }
+                // Draw the highlighted alias
+                int actual_idx = search_result.ItemIndex;
+                const char* alias_text = gContext->Commands[actual_idx].Names[search_result.MatchedNameIndex].c_str();
+                DrawHighlightedText(alias_text);
 
-                last_char_idx = char_idx;
+                draw_list->AddText(text_pos, text_color_regular, ")");
+            } else {
+                // Normal case: matched the main name, highlight it
+                DrawHighlightedText(text);
             }
-
-            // Draw the remaining range (if any)
-            if (range_begin != range_end) {
-                DrawCurrentRange();
-            }
-
-            // Draw the text after the last range (if any)
-            draw_list->AddText(text_pos, text_color_regular, text + range_end); // Draw until \0
         } else {
             // Otherwise, just draw text as-is, there are no highlights
 

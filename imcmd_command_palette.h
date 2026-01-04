@@ -41,7 +41,7 @@ using HelpFunc = std::function<std::string(const char*)>;
 
 struct Command
 {
-    std::string Name;
+    std::vector<std::string> Names; //< First element is the command name, subsequent elements are aliases
     std::function<void()> InitialCallback;
     std::function<void(int selected_option)> SubsequentCallback;
     std::function<void(const std::string& input_text)> TextInputCallback;
@@ -50,7 +50,7 @@ struct Command
     std::string Icon = "";
     std::string Shortcut = "";
     bool* IsChecked = nullptr;
-    int Priority = 0; //< Higher priority commands are listed first. Commands with the same Priority are sorted alphabetically by Name.
+    int Priority = 0; //< Higher priority commands are listed first. Commands with the same Priority are sorted alphabetically by Names[0].
 };
 
 struct PromptConfig
