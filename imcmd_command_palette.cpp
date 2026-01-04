@@ -939,10 +939,6 @@ void CommandPalette(const char* name, const char* hint)
     auto draw_list = window->DrawList;
     auto offsets = &window->DC.MenuColumns;
 
-    // Reset the MenuColumns to ensure we don't accumulate widths from previous frames or other command lists
-    // This prevents horizontal scrolling when switching between commands with/without shortcuts
-    offsets->Update(style.ItemSpacing.x, true);
-
     // Check if any item in the full unfiltered list has an icon
     // If so, always reserve space for icons even when filtered results don't have any
     bool has_any_icon = false;
