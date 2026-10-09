@@ -531,8 +531,9 @@ void CommandPalette(const char* name)
             return instance;
         }
     }();
-    float width = ImGui::GetWindowWidth();
-    float search_result_window_height = 400.0f; // TODO config
+    float width = ImGui::GetContentRegionAvail().x; // the window's width, less its padding
+    // At most 40% of the screen's height: on a phone, the list stays above the on-screen keyboard
+    float search_result_window_height = ImMin(400.0f, ImGui::GetMainViewport()->Size.y * 0.4f); // TODO config
 
     // BEGIN this command palette
     gg.CurrentCommandPalette = &gi;
@@ -822,7 +823,9 @@ void CommandPaletteWindow(const char* name, bool* p_open)
     auto viewport = ImGui::GetMainViewport()->Size;
 
     SetNextWindowAffixedTop();
-    ImGui::SetNextWindowSize(ImVec2(viewport.x * 0.3f, 0.0f));
+    // 30% of the screen's width, and at least 25 em (the whole width on a phone)
+    float width = ImMax(viewport.x * 0.3f, ImMin(viewport.x, ImGui::GetFontSize() * 25.0f));
+    ImGui::SetNextWindowSize(ImVec2(width, 0.0f));
     ImGui::Begin(name, nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar);
 
     if (ImGui::IsWindowAppearing()) {
